@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>挨拶チェックアプリ</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { margin:0; font-family:sans-serif; transition:background 0.4s;}
+    .main { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh;}
+    .sun { font-size:5em; margin:0.2em; }
+    .bubble { background:#fff; border:2px solid #000; border-radius:1em; padding:0.5em 1em; font-size:2em; margin:1em;}
+    .msg { font-size:3em; font-weight:bold;}
+    .face { font-size:4em;}
+  </style>
+</head>
+<body>
+  <div class="main">
+    <div class="sun">🌄</div>
+    <div class="bubble" id="detected">検出待ち…</div>
+    <div class="msg" id="msg"></div>
+    <div class="face" id="face"></div>
+  </div>
+  <script>
+    // 挨拶ワード
+    const GREETINGS = ["おはようございます", "ありがとうございました", "お先に失礼します"];
+    // Web Speech API
+    let rec = new(window.SpeechRecognition || window.webkitSpeechRecognition)();
+    rec.lang = "ja-JP";
+    rec.continuous = true;
+    let lastTranscript = "";
+    rec.onresult = function(event) {
+      let transcript = event.results[event.results.length-1][0].transcript.trim();
+      document.getElementById("detected").textContent = "検出: " + transcript;
+      // あいさつフレーズ検出
+      if(GREETINGS.some(w => transcript.includes(w))) {
+        startAudioCheck(transcript);
+      }
+    };
+    rec.start();
+
+    // 音量測定（Web Audio API）
+    let ctx, mic, analyser, dataArray, volume=0, volTimer;
+    function startAudioCheck(word) {
+      if(ctx) return; // 多重起動防止
+      navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
+        ctx = new AudioContext();
+        mic = ctx.createMediaStreamSource(stream);
+        analyser = ctx.createAnalyser();
+        mic.connect(analyser);
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+        let samples = [], duration = 1000; //1秒間
+        function measure() {
+          analyser.getByteFrequencyData(dataArray);
+          let avg = dataArray.reduce((a,b)=>a+b)/dataArray.length;
+          samples.push(avg);
+          if(samples.length*50 < duration) {
+            setTimeout(measure,50);
+          } else {
+            volume = samples.reduce((a,b)=>a+b)/samples.length;
+            showResult(word, volume);
+            ctx.close(); ctx=null;
+          }
+        }
+        measure();
+      });
+    }
+    function showResult(word, volume) {
+      let msg = "", face = "", bg="";
+      if(volume < 15) {
+        msg = "声が小さいです！";
+        face = "😟";
+        bg = "linear-gradient(#87ceeb 60%, #ff4444 40%)";
+      } else {
+        msg = "ナイス挨拶！";
+        face = "😄";
+        bg = "linear-gradient(#87ceeb 60%, #a0ffad 40%)";
+      }
+      document.getElementById("msg").textContent = msg + " (音量:" + volume.toFixed(1) + ")";
+      document.getElementById("face").textContent = face;
+      document.body.style.background = bg;
+      setTimeout(()=>{
+        document.getElementById("msg").textContent = "";
+        document.getElementById("face").textContent = "";
+        document.body.style.background = "#fff";
+      },3000);
+    }
+  </script>
+</body>
+</html>
